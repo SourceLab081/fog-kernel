@@ -44,10 +44,6 @@ MODULE_LICENSE("GPL v2");
 #endif
 
 #ifdef CONFIG_TARGET_PROJECT_C3Q
-/* Novatech */
-void nvt_ts_resume_execute(void);
-void nvt_ts_suspend_execute(void);
-
 /* Focaltech */
 void fts_ts_resume_execute(void);
 void fts_ts_suspend_execute(void);
@@ -1909,7 +1905,6 @@ static int screen_state_for_thermal_callback(struct notifier_block *nb, unsigned
 		sm.screen_state = 0;
 		pr_debug("%s: DRM_BLANK_POWERDOWN\n", __func__);
 #ifdef CONFIG_TARGET_PROJECT_C3Q
-		nvt_ts_suspend_execute(); //nvt_ts-suspend
 		fts_ts_suspend_execute(); //fts_ts-suspend
 #endif
 		break;
@@ -1917,7 +1912,6 @@ static int screen_state_for_thermal_callback(struct notifier_block *nb, unsigned
 		sm.screen_state = 1;
 		pr_debug("%s: DRM_BLANK_UNBLANK\n", __func__);
 #ifdef CONFIG_TARGET_PROJECT_C3Q
-		nvt_ts_resume_execute(); //nvt_ts-resume
 		fts_ts_resume_execute(); //fts_ts-resume
 #endif
 		break;

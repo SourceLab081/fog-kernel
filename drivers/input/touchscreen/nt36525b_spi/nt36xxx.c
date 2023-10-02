@@ -21,6 +21,8 @@
 #include <linux/irq.h>
 #include <linux/gpio.h>
 #include <linux/proc_fs.h>
+#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/input/mt.h>
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
@@ -43,8 +45,6 @@
 #if NVT_TOUCH_ESD_PROTECT
 #include <linux/jiffies.h>
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
-
-static bool nvt_ts_enable = false;
 
 #ifdef CHECK_TOUCH_VENDOR
 extern char *saved_command_line;
@@ -90,7 +90,7 @@ extern void Boot_Update_Firmware(struct work_struct *work);
 
 #if defined(CONFIG_FB)
 #if defined(CONFIG_DRM_PANEL)
-static struct drm_panel *active_panel;
+struct drm_panel *lcd_active_panel;
 static int nvt_drm_panel_notifier_callback(struct notifier_block *self, unsigned long event, void *data);
 #elif defined(_MSM_DRM_NOTIFY_H_)
 static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long event, void *data);
@@ -212,27 +212,6 @@ int nvt_ts_recovery_callback(void)
 EXPORT_SYMBOL(nvt_ts_recovery_callback);
 
 #endif
-
-void nvt_ts_suspend_execute(void)
-{
-	if (nvt_ts_enable)
-	{
-		NVT_LOG("run nvt suspend\n");
-		nvt_ts_suspend(&ts->client->dev);
-	}
-
-}
-EXPORT_SYMBOL(nvt_ts_suspend_execute);
-
-void nvt_ts_resume_execute(void)
-{
-	if (nvt_ts_enable)
-	{
-		NVT_LOG("run nvt resume\n");
-		nvt_ts_resume(&ts->client->dev);
-	}
-}
-EXPORT_SYMBOL(nvt_ts_resume_execute);
 
 /*2019.12.6 longcheer taocheng add charger mode begin*/
 /*function description*/
@@ -1889,7 +1868,7 @@ static int nvt_ts_check_dt(struct device_node *np)
 		panel = of_drm_find_panel(node);
 		of_node_put(node);
 		if (!IS_ERR(panel)) {
-			active_panel = panel;
+			lcd_active_panel = panel;
 			return 0;
 		}
 	}
@@ -2023,6 +2002,18 @@ out:
 	return ret;
 }
 #endif
+
+static void nvt_resume_work(struct work_struct *work)
+{
+	struct nvt_ts_data *ts_core = container_of(work, struct nvt_ts_data, resume_work);
+	nvt_ts_resume(&ts_core->client->dev);
+}
+
+static void nvt_suspend_work(struct work_struct *work)
+{
+	struct nvt_ts_data *ts_core = container_of(work, struct nvt_ts_data, suspend_work);
+	nvt_ts_suspend(&ts_core->client->dev);
+}
 
 /*******************************************************
 Description:
@@ -2395,11 +2386,20 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	}
 #endif
 
+	ts->event_wq = alloc_workqueue("nvt-event-queue",
+		WQ_UNBOUND | WQ_HIGHPRI | WQ_CPU_INTENSIVE, 1);
+	if (!ts->event_wq) {
+		NVT_ERR("Can not create work thread for suspend/resume!!");
+		ret = -ENOMEM;
+		goto err_alloc_work_thread_failed;
+	}
+	INIT_WORK(&ts->resume_work, nvt_resume_work);
+	INIT_WORK(&ts->suspend_work, nvt_suspend_work);
 #if defined(CONFIG_FB)
 #if defined(CONFIG_DRM_PANEL)
 	ts->drm_panel_notif.notifier_call = nvt_drm_panel_notifier_callback;
-	if (active_panel) {
-		ret = drm_panel_notifier_register(active_panel, &ts->drm_panel_notif);
+	if (lcd_active_panel) {
+		ret = drm_panel_notifier_register(lcd_active_panel, &ts->drm_panel_notif);
 		if (ret < 0) {
 			NVT_ERR("register drm_panel_notifier failed. ret=%d\n", ret);
 			goto err_register_drm_panel_notif_failed;
@@ -2458,7 +2458,8 @@ err_register_early_suspend_failed:
 err_init_lct_tp_work_failed:
 uninit_lct_tp_work();
 #endif
-
+	destroy_workqueue(ts->event_wq);
+err_alloc_work_thread_failed:
 #if LCT_TP_GRIP_AREA_EN
 err_init_lct_tp_grip_area_failed:
 uninit_lct_tp_grip_area();
@@ -2574,8 +2575,8 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 
 #if defined(CONFIG_FB)
 #if defined(CONFIG_DRM_PANEL)
-	if (active_panel) {
-		if (drm_panel_notifier_unregister(active_panel, &ts->drm_panel_notif))
+	if (lcd_active_panel) {
+		if (drm_panel_notifier_unregister(lcd_active_panel, &ts->drm_panel_notif))
 			NVT_ERR("Error occurred while unregistering drm_panel_notifier.\n");
 	}
 #elif defined(_MSM_DRM_NOTIFY_H_)
@@ -2680,8 +2681,8 @@ static void nvt_ts_shutdown(struct spi_device *client)
 
 #if defined(CONFIG_FB)
 #if defined(CONFIG_DRM_PANEL)
-	if (active_panel) {
-		if (drm_panel_notifier_unregister(active_panel, &ts->drm_panel_notif))
+	if (lcd_active_panel) {
+		if (drm_panel_notifier_unregister(lcd_active_panel, &ts->drm_panel_notif))
 			NVT_ERR("Error occurred while unregistering drm_panel_notifier.\n");
 	}
 #elif defined(_MSM_DRM_NOTIFY_H_)
@@ -2968,12 +2969,14 @@ static int nvt_drm_panel_notifier_callback(struct notifier_block *self, unsigned
 		if (event == DRM_PANEL_EARLY_EVENT_BLANK) {
 			if (*blank == DRM_PANEL_BLANK_POWERDOWN) {
 				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				nvt_ts_suspend(&ts->client->dev);
+				flush_workqueue(ts->event_wq);
+				queue_work(ts->event_wq, &ts->suspend_work);
 			}
 		} else if (event == DRM_PANEL_EVENT_BLANK) {
 			if (*blank == DRM_PANEL_BLANK_UNBLANK) {
 				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				nvt_ts_resume(&ts->client->dev);
+				flush_workqueue(ts->event_wq);
+				queue_work(ts->event_wq, &ts->resume_work);
 			}
 		}
 	}
@@ -2996,12 +2999,14 @@ static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long 
 		if (event == MSM_DRM_EARLY_EVENT_BLANK) {
 			if (*blank == MSM_DRM_BLANK_POWERDOWN) {
 				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				nvt_ts_suspend(&ts->client->dev);
+				flush_workqueue(ts->event_wq);
+				queue_work(ts->event_wq, &ts->suspend_work);			
 			}
 		} else if (event == MSM_DRM_EVENT_BLANK) {
 			if (*blank == MSM_DRM_BLANK_UNBLANK) {
 				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				nvt_ts_resume(&ts->client->dev);
+				flush_workqueue(ts->event_wq);
+				queue_work(ts->event_wq, &ts->resume_work);
 			}
 		}
 	}
@@ -3020,13 +3025,15 @@ static int nvt_fb_notifier_callback(struct notifier_block *self, unsigned long e
 		blank = evdata->data;
 		if (*blank == FB_BLANK_POWERDOWN) {
 			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-			nvt_ts_suspend(&ts->client->dev);
+			flush_workqueue(ts->event_wq);
+			queue_work(ts->event_wq, &ts->suspend_work);
 		}
 	} else if (evdata && evdata->data && event == FB_EVENT_BLANK) {
 		blank = evdata->data;
 		if (*blank == FB_BLANK_UNBLANK) {
 			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-			nvt_ts_resume(&ts->client->dev);
+			flush_workqueue(ts->event_wq);
+			queue_work(ts->event_wq, &ts->resume_work);
 		}
 	}
 
@@ -3108,9 +3115,6 @@ static int32_t __init nvt_driver_init(void)
 	} else {
 		if (strstr(saved_command_line,"c3q_35_02_0a") != NULL) {
 			touch_vendor_id = TP_VENDOR_BOE;
-#ifdef CONFIG_TARGET_PROJECT_C3Q
-			nvt_ts_enable = true;
-#endif
 			NVT_LOG("TP info: [Vendor]BOE [IC]nt36525b\n");
 		} else {
 			touch_vendor_id = TP_VENDOR_UNKNOW;

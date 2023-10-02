@@ -378,6 +378,7 @@ int dsi_panel_apply_hbm_mode(struct dsi_panel *panel);
 
 #ifdef CONFIG_TARGET_PROJECT_C3Q
 int dsi_panel_apply_cabc_mode(struct dsi_panel *panel);
+extern struct drm_panel *lcd_active_panel;
 #endif
 
 #endif /* _DSI_PANEL_H_ */

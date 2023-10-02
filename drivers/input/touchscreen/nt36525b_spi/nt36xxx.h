@@ -23,6 +23,8 @@
 #include <linux/of.h>
 #include <linux/spi/spi.h>
 #include <linux/uaccess.h>
+#include <linux/sysfs.h>
+#include <linux/workqueue.h>
 
 #include <linux/regulator/consumer.h>
 
@@ -210,6 +212,9 @@ struct nvt_ts_data {
 #ifdef CONFIG_SPI_MT65XX
     struct mtk_chip_config spi_ctrl;
 #endif
+	struct workqueue_struct *event_wq;
+	struct work_struct suspend_work;
+	struct work_struct resume_work;
 };
 
 #if NVT_TOUCH_PROC

@@ -3621,7 +3621,13 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	rc = drm_panel_add(&panel->drm_panel);
 	if (rc)
 		goto error;
-
+	#ifdef CONFIG_TARGET_PROJECT_C3Q
+	else {
+		 
+               	//Because node in nvt_ts failed to count>0 
+		lcd_active_panel = &panel->drm_panel;
+	}
+	#endif
 	mutex_init(&panel->panel_lock);
 
 	return panel;
