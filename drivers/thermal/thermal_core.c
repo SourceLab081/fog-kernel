@@ -43,12 +43,6 @@ MODULE_LICENSE("GPL v2");
 #define CPU_LIMITS_PARAM_NUM    2
 #endif
 
-#ifdef CONFIG_TARGET_PROJECT_C3Q
-/* Focaltech */
-void fts_ts_resume_execute(void);
-void fts_ts_suspend_execute(void);
-#endif
-
 static DEFINE_IDA(thermal_tz_ida);
 static DEFINE_IDA(thermal_cdev_ida);
 
@@ -1904,16 +1898,10 @@ static int screen_state_for_thermal_callback(struct notifier_block *nb, unsigned
 	case DRM_BLANK_POWERDOWN:
 		sm.screen_state = 0;
 		pr_debug("%s: DRM_BLANK_POWERDOWN\n", __func__);
-#ifdef CONFIG_TARGET_PROJECT_C3Q
-		fts_ts_suspend_execute(); //fts_ts-suspend
-#endif
 		break;
 	case DRM_BLANK_UNBLANK:
 		sm.screen_state = 1;
 		pr_debug("%s: DRM_BLANK_UNBLANK\n", __func__);
-#ifdef CONFIG_TARGET_PROJECT_C3Q
-		fts_ts_resume_execute(); //fts_ts-resume
-#endif
 		break;
 	default:
 		break;
