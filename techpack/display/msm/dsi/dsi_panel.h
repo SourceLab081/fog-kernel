@@ -130,6 +130,7 @@ struct dsi_backlight_config {
 	u32 bl_scale_sv;
 	bool bl_inverted_dbv;
 	u32 bl_dcs_subtype;
+	bool bl_move_high_8b;
 
 	int en_gpio;
 	/* PWM params */
@@ -243,6 +244,7 @@ struct dsi_panel {
 #endif
     int hbm_mode;
 #ifdef CONFIG_TARGET_PROJECT_C3Q
+	bool dispparam_enabled;
 	int cabc_mode;
 #endif
 };

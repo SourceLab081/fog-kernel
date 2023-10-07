@@ -70,6 +70,7 @@ extern touchscreen_usb_plugin_data_t g_touchscreen_usb_pulgin;
 * Global variable or extern global variabls/functions
 *****************************************************************************/
 struct fts_ts_data *fts_data;
+extern void set_fts_ts_varian(bool en);
 
 #if LCT_TP_USB_PLUGIN
 void fts_ts_usb_event_callback(void)
@@ -1774,6 +1775,7 @@ static int fts_ts_probe(struct spi_device *spi)
     }
 
     FTS_INFO("Touch Screen(SPI BUS) driver prboe successfully");
+    set_fts_ts_varian(true);
     return 0;
 }
 

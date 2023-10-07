@@ -510,6 +510,12 @@ void set_lcd_reset_gpio_keep_high(bool en)
 	lcd_reset_keep_high = en;
 }
 EXPORT_SYMBOL(set_lcd_reset_gpio_keep_high);
+static bool fts_ts_varian = false;
+void set_fts_ts_varian(bool en)
+{
+	fts_ts_varian = en;
+}
+EXPORT_SYMBOL(set_fts_ts_varian);
 #endif
 
 static int dsi_panel_power_off(struct dsi_panel *panel)
@@ -522,6 +528,7 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 
 	if (gpio_is_valid(panel->reset_config.disp_en_gpio))
 		gpio_set_value(panel->reset_config.disp_en_gpio, 0);
+
 
 	if (gpio_is_valid(panel->reset_config.reset_gpio) &&
 					!panel->reset_gpio_always_on) {
@@ -710,6 +717,9 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	if (panel->bl_config.bl_inverted_dbv)
 		bl_lvl = (((bl_lvl & 0xff) << 8) | (bl_lvl >> 8));
 
+	if (panel->bl_config.bl_move_high_8b)
+		bl_lvl = bl_lvl >> 8;
+	
 	if (panel->bl_config.bl_dcs_subtype == 0xc2)
 		rc = dsi_panel_dcs_set_display_brightness_c2(dsi, bl_lvl);
 	else
@@ -2184,8 +2194,15 @@ static int dsi_panel_parse_reset_sequence(struct dsi_panel *panel)
 	const u32 *arr;
 	struct dsi_parser_utils *utils = &panel->utils;
 	struct dsi_reset_seq *seq;
+	bool fts_reset_seq = false;
 
 	if (panel->host_config.ext_bridge_mode)
+		return 0;
+	
+	fts_reset_seq = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-focaltech-reset-sequence");
+	
+	if (fts_ts_varian && !fts_reset_seq) 
 		return 0;
 
 	arr = utils->get_property(utils->data,
@@ -2534,6 +2551,9 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 
 	panel->bl_config.bl_inverted_dbv = utils->read_bool(utils->data,
 		"qcom,mdss-dsi-bl-inverted-dbv");
+
+	panel->bl_config.bl_move_high_8b = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-bl-move-high-8b");
 
 	if (panel->bl_config.type == DSI_BACKLIGHT_PWM) {
 		rc = dsi_panel_parse_bl_pwm_config(panel);
@@ -3511,7 +3531,9 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	struct dsi_parser_utils *utils;
 	const char *panel_physical_type;
 	int rc = 0;
-
+#ifdef CONFIG_TARGET_PROJECT_C3Q
+	bool dispparam_enabled = false;
+#endif
 	panel = kzalloc(sizeof(*panel), GFP_KERNEL);
 	if (!panel)
 		return ERR_PTR(-ENOMEM);
@@ -3536,6 +3558,19 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 				"qcom,mdss-dsi-panel-physical-type", NULL);
 	if (panel_physical_type && !strcmp(panel_physical_type, "oled"))
 		panel->panel_type = DSI_DISPLAY_PANEL_TYPE_OLED;
+
+#ifdef CONFIG_TARGET_PROJECT_C3Q
+	dispparam_enabled = utils->read_bool(utils->data,
+				"qcom,dispparam-enabled");
+
+	if (dispparam_enabled) {
+		pr_debug("[LCD]%s:%d Dispparam enabled.\n", __func__, __LINE__);
+		panel->dispparam_enabled = true;
+	} else {
+		pr_debug("[LCD]%s:%d Dispparam disabled.\n", __func__, __LINE__);
+		panel->dispparam_enabled = false;
+	}
+#endif
 	rc = dsi_panel_parse_host_config(panel);
 	if (rc) {
 		DSI_ERR("failed to parse host configuration, rc=%d\n",
@@ -4632,8 +4667,10 @@ int dsi_panel_enable(struct dsi_panel *panel)
 		dsi_panel_apply_hbm_mode(panel);
 
 #ifdef CONFIG_TARGET_PROJECT_C3Q
-	if (panel->cabc_mode)
-		dsi_panel_apply_cabc_mode(panel);
+	if (panel->dispparam_enabled) {	
+		if (panel->cabc_mode)
+			dsi_panel_apply_cabc_mode(panel);
+	}
 #endif
 
 	mutex_lock(&panel->panel_lock);
@@ -4812,7 +4849,6 @@ error:
 	return rc;
 }
 
-#ifdef CONFIG_TARGET_PROJECT_K7T
 void dsi_set_backlight_control(struct dsi_panel *panel,
 			 struct dsi_display_mode *adj_mode)
 {
@@ -4822,8 +4858,11 @@ void dsi_set_backlight_control(struct dsi_panel *panel,
 		pr_err("Invalid params\n");
 		return;
 	}
-
+#ifdef CONFIG_TARGET_PROJECT_C3Q
+ 
+#endif
 	mutex_lock(&panel->panel_lock);
+#ifdef CONFIG_TARGET_PROJECT_K7T
 	if (adj_mode->timing.refresh_rate == 90) {
 		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_DISP_BC_90HZ);
 		if (rc)
@@ -4843,11 +4882,11 @@ void dsi_set_backlight_control(struct dsi_panel *panel,
 			DSI_INFO("%s: refresh_rate = %d\n", __func__, adj_mode->timing.refresh_rate);
 		}
 	}
+#endif
 	mutex_unlock(&panel->panel_lock);
 
 	return;
 }
-#endif
 
 int dsi_panel_apply_hbm_mode(struct dsi_panel *panel)
 {
