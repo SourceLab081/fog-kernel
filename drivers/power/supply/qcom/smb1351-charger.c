@@ -1402,7 +1402,8 @@ static int smb1351_get_prop_batt_temp(struct smb1351_charger *chip)
 	}else{
 		power_supply_get_property(chip->bms_psy,
 				POWER_SUPPLY_PROP_TEMP, &ret);
-		return ret.intval;
+		//Fix for temperature battery reading
+		return ret.intval * 10;
 	}
 
 	//pr_err("return default temperature\n");
