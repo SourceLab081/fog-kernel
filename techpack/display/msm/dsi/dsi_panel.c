@@ -856,8 +856,8 @@ frst                mid			  lst
 
 After view log from dmesg log
 first=9 middle=170 last=1805 , Because slider not balance so diveded 2 part : min to middle (side a) and middle to max (side b) 
-example for invert number with reference from middle
-side x with member number 3456789 so middle=(3+9)/2 if x=6 and change to x=4,  7 to 4 , etc
+example for invert number with reference from middle :
+side x with member number 3456789 so middle=(3+9)/2 if x=8 then change to x=4, if x=5 then x=7 and so on
 2 process: on every side invert number from side's middle then move left for side b and move right for side a
 */
 //this is approximation value middle=226 not 170 after calculte it, so this can use number 8 as devider or reverse
