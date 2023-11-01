@@ -893,8 +893,8 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 
 	//invert num
 	orig_lvl=bl_lvl;
-	if (panel->bl_config.bl_move_high_8b)
- 		bl_lvl=getinvertNumber(bl_lvl, bl->bl_max_level);
+	//if (panel->bl_config.bl_move_high_8b)
+ 		//bl_lvl=getinvertNumber(bl_lvl, bl->bl_max_level);
 
 	DSI_INFO("backlight type:%d bl-lvl:%d orig bl_lvl:%d\n", bl->type, bl_lvl,orig_lvl);
 	switch (bl->type) {
