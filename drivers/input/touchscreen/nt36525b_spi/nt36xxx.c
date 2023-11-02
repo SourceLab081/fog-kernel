@@ -1422,6 +1422,15 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
 	if (bTouchIsAwake == 0) {
 		pm_wakeup_event(&ts->input_dev->dev, 5000);
 	}
+#ifdef CONFIG_PM
+	if (ts->dev_pm_suspend && ts->is_gesture_mode) {
+		ret = wait_for_completion_timeout(&ts->dev_pm_suspend_completion, msecs_to_jiffies(700));
+		if (!ret) {
+			NVT_ERR("system(spi bus) can't finished resuming procedure, skip it");
+			return IRQ_HANDLED;
+		}
+	}
+#endif
 #endif
 
 	mutex_lock(&ts->lock);
@@ -1469,9 +1478,10 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
    }
 #endif /* POINT_DATA_CHECKSUM */
 
+	input_id = (uint8_t)(point_data[1] >> 3);
 #if WAKEUP_GESTURE
 	if (bTouchIsAwake == 0) {
-		input_id = (uint8_t)(point_data[1] >> 3);
+		//input_id = (uint8_t)(point_data[1] >> 3);
 		nvt_ts_wakeup_gesture_report(input_id, point_data);
 		mutex_unlock(&ts->lock);
 		return IRQ_HANDLED;
@@ -1793,7 +1803,7 @@ return:
 /*
 static int32_t nvt_ts_enable_regulator(bool en)
 {
-	static bool status = false;
+	static bool status;
 	int32_t ret = 0;
 
 	if (status == en) {
@@ -1848,6 +1858,7 @@ disable_vdd_regulator:
 exit:
 	return ret;
 }
+
 */
 #endif
 
@@ -2120,6 +2131,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		NVT_ERR("parse dt error\n");
 		goto err_spi_setup;
 	}
+
 /*
 #if WAKEUP_GESTURE
 	ret = nvt_ts_get_regulator(true);
@@ -2128,12 +2140,13 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		goto err_get_regulator;
 	}
 
-	ret = nvt_ts_enable_regulator(false);//default disable regulator
+	ret = nvt_ts_enable_regulator(true);
 	if (ret < 0) {
 		NVT_ERR("Failed to enable regulator\n");
 		goto err_enable_regulator;
 	}
 #endif
+
 */
 	//---request and config GPIOs---
 	ret = nvt_gpio_config(ts);
@@ -2144,6 +2157,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 	mutex_init(&ts->lock);
 	mutex_init(&ts->xbuf_lock);
+	//mutex_init(&ts->reg_lock);
 
 	//---eng reset before TP_RESX high
 	nvt_eng_reset();
@@ -2435,6 +2449,12 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	NVT_LOG("end\n");
 
 	nvt_irq_enable(true);
+#ifdef CONFIG_PM
+	ts->dev_pm_suspend = false;
+	init_completion(&ts->dev_pm_suspend_completion);
+#endif
+
+	pm_runtime_enable(&ts->client->dev);
 
 //2019.12.06 longcheer taocheng add for charger mode
 #if NVT_USB_PLUGIN
@@ -2538,6 +2558,7 @@ err_enable_regulator:
 	nvt_ts_get_regulator(false);
 err_get_regulator:
 #endif
+
 */
 err_spi_setup:
 err_ckeck_full_duplex:
@@ -2545,20 +2566,20 @@ err_ckeck_full_duplex:
 #ifdef CHECK_TOUCH_VENDOR
 err_vendor_check:
 #endif
-	if (ts->rbuf) {
+	//if (ts->rbuf) {
 		kfree(ts->rbuf);
 		ts->rbuf = NULL;
-	}
+	//}
 err_malloc_rbuf:
-	if (ts->xbuf) {
+	//if (ts->xbuf) {
 		kfree(ts->xbuf);
 		ts->xbuf = NULL;
-	}
+	//}
 err_malloc_xbuf:
-	if (ts) {
+	//if (ts) {
 		kfree(ts);
 		ts = NULL;
-	}
+	//}
 	return ret;
 }
 
@@ -2638,11 +2659,13 @@ uninit_lct_tp_info();
 
 	mutex_destroy(&ts->xbuf_lock);
 	mutex_destroy(&ts->lock);
+
 /*
 #if WAKEUP_GESTURE
 	nvt_ts_enable_regulator(false);
 	nvt_ts_get_regulator(false);
 #endif
+
 */
 	nvt_gpio_deconfig(ts);
 
@@ -2660,15 +2683,15 @@ uninit_lct_tp_info();
 
 	spi_set_drvdata(client, NULL);
 
-	if (ts->xbuf) {
+	//if (ts->xbuf) {
 		kfree(ts->xbuf);
 		ts->xbuf = NULL;
-	}
+	//}
 
-	if (ts) {
+	//if (ts) {
 		kfree(ts);
 		ts = NULL;
-	}
+	//}
 
 	return 0;
 }
@@ -2793,9 +2816,9 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	NVT_LOG("Enabled touch wakeup gesture\n");
 	} else {
 		//---write command to enter "deep sleep mode"---
-		buf[0] = EVENT_MAP_HOST_CMD;
-		buf[1] = 0x11;
-		CTP_SPI_WRITE(ts->client, buf, 2);
+		//buf[0] = EVENT_MAP_HOST_CMD;
+		//buf[1] = 0x11;
+		//CTP_SPI_WRITE(ts->client, buf, 2);
 		NVT_LOG("power off, enter sleep mode\n");
 	}
 
@@ -2856,6 +2879,11 @@ static int32_t nvt_ts_resume(struct device *dev)
 {
 	if (bTouchIsAwake) {
 		NVT_LOG("Touch is already resume\n");
+#if NVT_TOUCH_WDT_RECOVERY
+		mutex_lock(&ts->lock);
+		nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME);
+		mutex_unlock(&ts->lock);
+#endif /* #if NVT_TOUCH_WDT_RECOVERY */
 		return 0;
 	}
 
@@ -3066,6 +3094,34 @@ static void nvt_ts_late_resume(struct early_suspend *h)
 }
 #endif
 
+#ifdef CONFIG_PM
+static int nvt_pm_suspend(struct device *dev)
+{
+	struct nvt_ts_data *ts = dev_get_drvdata(dev);
+
+	ts->dev_pm_suspend = true;
+	reinit_completion(&ts->dev_pm_suspend_completion);
+	NVT_LOG("pm suspend");
+
+	return 0;
+}
+
+static int nvt_pm_resume(struct device *dev)
+{
+	struct nvt_ts_data *ts = dev_get_drvdata(dev);
+
+	ts->dev_pm_suspend = false;
+	complete(&ts->dev_pm_suspend_completion);
+	NVT_LOG("pm resume");
+
+	return 0;
+}
+
+static const struct dev_pm_ops nvt_dev_pm_ops = {
+	.suspend = nvt_pm_suspend,
+	.resume = nvt_pm_resume,
+};
+#endif
 static const struct spi_device_id nvt_ts_id[] = {
 	{ NVT_SPI_NAME, 0 },
 	{ }
@@ -3086,6 +3142,9 @@ static struct spi_driver nvt_spi_driver = {
 	.driver = {
 		.name	= NVT_SPI_NAME,
 		.owner	= THIS_MODULE,
+#ifdef CONFIG_PM
+		.pm = &nvt_dev_pm_ops,
+#endif
 #ifdef CONFIG_OF
 		.of_match_table = nvt_match_table,
 #endif
@@ -3163,6 +3222,8 @@ late_initcall(nvt_driver_init);
 #else
 late_initcall(nvt_driver_init);
 #endif
+
+//device_initcall(nvt_driver_init);
 module_exit(nvt_driver_exit);
 
 MODULE_DESCRIPTION("Novatek Touchscreen Driver");

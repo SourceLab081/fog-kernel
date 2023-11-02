@@ -36,6 +36,10 @@
 
 extern void lcd_esd_enable(bool on);
 
+//dt2w variable
+bool gesture_flag = false;
+int Mode = 0;
+
 enum dsi_dsc_ratio_type {
 	DSC_8BPC_8BPP,
 	DSC_10BPC_8BPP,
@@ -325,6 +329,12 @@ static int dsi_panel_gpio_release(struct dsi_panel *panel)
 	if (gpio_is_valid(panel->bl_config.en_gpio))
 		gpio_free(panel->bl_config.en_gpio);
 
+	if (gpio_is_valid(r_config->lcm_enn_gpio))
+		gpio_free(r_config->lcm_enn_gpio);
+
+	if (gpio_is_valid(r_config->lcm_enp_gpio))
+		gpio_free(r_config->lcm_enp_gpio);
+
 	if (gpio_is_valid(panel->reset_config.lcd_mode_sel_gpio))
 		gpio_free(panel->reset_config.lcd_mode_sel_gpio);
 
@@ -372,6 +382,26 @@ static int dsi_panel_reset(struct dsi_panel *panel)
 			goto exit;
 		}
 	}
+	if (gpio_is_valid(r_config->lcm_enp_gpio)) {
+		rc = gpio_direction_output(r_config->lcm_enp_gpio, 1);
+		if (rc) {
+			pr_err("unable to set dir forr_config->lcm_enp_gpio rc=%d\n", rc);
+			goto exit;
+		}
+	}
+
+	msleep(5);
+
+	if (gpio_is_valid(r_config->lcm_enn_gpio)) {
+		rc = gpio_direction_output(r_config->lcm_enn_gpio, 1);
+		if (rc) {
+			pr_err("unable to set dir forr_config->lcm_enn_gpio rc=%d\n", rc);
+			goto exit;
+		}
+	}
+
+	msleep(5);
+
 #ifdef CONFIG_TARGET_PROJECT_K7T
 	usleep_range(10000, 10010);
 #endif
@@ -451,7 +481,6 @@ static int dsi_panel_set_pinctrl_state(struct dsi_panel *panel, bool enable)
 	return rc;
 }
 
-
 static int dsi_panel_power_on(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -467,11 +496,14 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		goto exit;
 	}
 
+//for dt2w purpose line bellow disable for fog 
+#ifdef CONFIG_TARGET_PROJECT_K7T
 	rc = dsi_panel_set_pinctrl_state(panel, true);
 	if (rc) {
 		DSI_ERR("[%s] failed to set pinctrl, rc=%d\n", panel->name, rc);
 		goto error_disable_vregs;
 	}
+#endif
 
 	rc = dsi_panel_reset(panel);
 #ifdef CONFIG_TARGET_PROJECT_K7T
@@ -495,16 +527,26 @@ error_disable_gpio:
 	if (gpio_is_valid(panel->bl_config.en_gpio))
 		gpio_set_value(panel->bl_config.en_gpio, 0);
 
+	if (gpio_is_valid(panel->reset_config.lcm_enp_gpio))
+		gpio_set_value(panel->reset_config.lcm_enp_gpio, 0);
+
+	if (gpio_is_valid(panel->reset_config.lcm_enn_gpio))
+		gpio_set_value(panel->reset_config.lcm_enn_gpio, 0);
+
 	(void)dsi_panel_set_pinctrl_state(panel, false);
 
+#ifdef CONFIG_TARGET_PROJECT_K7T
 error_disable_vregs:
 	(void)dsi_pwr_enable_regulator(&panel->power_info, false);
+#endif
 
 exit:
 	return rc;
 }
 
 #ifdef CONFIG_TARGET_PROJECT_C3Q
+extern bool get_lct_tp_gesture_status(void);
+extern bool nvt_gesture_flag;
 static bool lcd_reset_keep_high = false;
 void set_lcd_reset_gpio_keep_high(bool en)
 {
@@ -522,6 +564,13 @@ EXPORT_SYMBOL(set_fts_ts_varian);
 static int dsi_panel_power_off(struct dsi_panel *panel)
 {
 	int rc = 0;
+
+#ifdef CONFIG_TARGET_PROJECT_C3Q
+	usleep_range(11000, 11010);	
+	if (get_lct_tp_gesture_status()) 
+  			gesture_flag = true;
+
+#endif
 
 #ifdef CONFIG_TARGET_PROJECT_K7T
 	usleep_range(11000, 11010);
@@ -554,6 +603,25 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 		if (rc)
 			DSI_WARN("set dir for panel test gpio failed rc=%d\n",
 				 rc);
+	}
+
+	if(!gesture_flag)
+	{
+		msleep(10);
+
+		if (gpio_is_valid(panel->reset_config.lcm_enn_gpio))
+		{
+			gpio_set_value(panel->reset_config.lcm_enn_gpio, 0);
+			gpio_direction_output(panel->reset_config.lcm_enn_gpio, 0);
+		}
+
+		msleep(5);
+
+		if (gpio_is_valid(panel->reset_config.lcm_enp_gpio))
+		{
+			gpio_set_value(panel->reset_config.lcm_enp_gpio, 0);
+			gpio_direction_output(panel->reset_config.lcm_enp_gpio, 0);
+		}
 	}
 
 	rc = dsi_panel_set_pinctrl_state(panel, false);
@@ -2459,6 +2527,20 @@ static int dsi_panel_parse_gpios(struct dsi_panel *panel)
 			DSI_DEBUG("[%s] platform-en-gpio is not set, rc=%d\n",
 				 panel->name, rc);
 		}
+	}
+
+	panel->reset_config.lcm_enp_gpio = utils->get_named_gpio(utils->data,
+					"qcom,lcm-enp-gpio", 0);
+	if (!gpio_is_valid(panel->reset_config.lcm_enp_gpio)) {
+			pr_err("[%s] lcm-enp-gpio is not set, rc=%d\n",
+				 panel->name, rc);
+	}
+
+	panel->reset_config.lcm_enn_gpio = utils->get_named_gpio(utils->data,
+					"qcom,lcm-enn-gpio", 0);
+	if (!gpio_is_valid(panel->reset_config.lcm_enn_gpio)) {
+			pr_err("[%s] lcm-enn-gpio is not set, rc=%d\n",
+				 panel->name, rc);
 	}
 
 	panel->reset_config.lcd_mode_sel_gpio = utils->get_named_gpio(
@@ -4860,13 +4942,21 @@ int dsi_panel_unprepare(struct dsi_panel *panel)
 		return -EINVAL;
 	}
 
-	mutex_lock(&panel->panel_lock);
+	#ifdef CONFIG_TARGET_PROJECT_C3Q
+		if (get_lct_tp_gesture_status()) 
+  			gesture_flag = true;
+	#endif
+	
+	if (!gesture_flag)
+	{
+		mutex_lock(&panel->panel_lock);
 
-	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_POST_OFF);
-	if (rc) {
-		DSI_ERR("[%s] failed to send DSI_CMD_SET_POST_OFF cmds, rc=%d\n",
-		       panel->name, rc);
-		goto error;
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_POST_OFF);
+		if (rc) {
+			DSI_ERR("[%s] failed to send DSI_CMD_SET_POST_OFF cmds, rc=%d\n",
+			       panel->name, rc);
+			goto error;
+		}
 	}
 
 error:
