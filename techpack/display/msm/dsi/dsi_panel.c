@@ -38,7 +38,6 @@ extern void lcd_esd_enable(bool on);
 
 //dt2w variable
 bool gesture_flag = false;
-int Mode = 0;
 
 enum dsi_dsc_ratio_type {
 	DSC_8BPC_8BPP,
@@ -481,6 +480,15 @@ static int dsi_panel_set_pinctrl_state(struct dsi_panel *panel, bool enable)
 	return rc;
 }
 
+#ifdef CONFIG_TARGET_PROJECT_C3Q
+static bool fts_ts_varian = false;
+void set_fts_ts_varian(bool en)
+{
+	fts_ts_varian = en;
+}
+EXPORT_SYMBOL(set_fts_ts_varian);
+#endif
+
 static int dsi_panel_power_on(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -496,14 +504,14 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		goto exit;
 	}
 
-//for dt2w purpose line bellow disable for fog 
-#ifdef CONFIG_TARGET_PROJECT_K7T
+//for dt2w purpose, coz error for fts variant 
+if (fts_ts_varian) {
 	rc = dsi_panel_set_pinctrl_state(panel, true);
 	if (rc) {
 		DSI_ERR("[%s] failed to set pinctrl, rc=%d\n", panel->name, rc);
 		goto error_disable_vregs;
 	}
-#endif
+}
 
 	rc = dsi_panel_reset(panel);
 #ifdef CONFIG_TARGET_PROJECT_K7T
@@ -535,10 +543,10 @@ error_disable_gpio:
 
 	(void)dsi_panel_set_pinctrl_state(panel, false);
 
-#ifdef CONFIG_TARGET_PROJECT_K7T
+if (fts_ts_varian) {
 error_disable_vregs:
 	(void)dsi_pwr_enable_regulator(&panel->power_info, false);
-#endif
+}
 
 exit:
 	return rc;
@@ -553,12 +561,6 @@ void set_lcd_reset_gpio_keep_high(bool en)
 	lcd_reset_keep_high = en;
 }
 EXPORT_SYMBOL(set_lcd_reset_gpio_keep_high);
-static bool fts_ts_varian = false;
-void set_fts_ts_varian(bool en)
-{
-	fts_ts_varian = en;
-}
-EXPORT_SYMBOL(set_fts_ts_varian);
 #endif
 
 static int dsi_panel_power_off(struct dsi_panel *panel)
@@ -566,9 +568,10 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 	int rc = 0;
 
 #ifdef CONFIG_TARGET_PROJECT_C3Q
-	usleep_range(11000, 11010);	
+	//usleep_range(11000, 11010);	
 	if (get_lct_tp_gesture_status()) 
   			gesture_flag = true;
+	else gesture_flag = false;
 
 #endif
 
@@ -783,12 +786,15 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	dsi = &panel->mipi_device;
 	bl = &panel->bl_config;
 
+	//bl_lvl = bl_lvl * 9 / 10;
+	if (panel->bl_config.bl_move_high_8b) {
+        	bl_lvl = bl_lvl << 5;
+		bl_lvl = (((bl_lvl & 0xff00)) | ((bl_lvl & 0xe0) >> 4));
+	}
+
 	if (panel->bl_config.bl_inverted_dbv)
 		bl_lvl = (((bl_lvl & 0xff) << 8) | (bl_lvl >> 8));
 
-	if (panel->bl_config.bl_move_high_8b)
-		bl_lvl = bl_lvl >> 8;
-	
 	if (panel->bl_config.bl_dcs_subtype == 0xc2)
 		rc = dsi_panel_dcs_set_display_brightness_c2(dsi, bl_lvl);
 	else
@@ -897,74 +903,16 @@ int dsi_panel_set_doze_mode(struct dsi_panel *panel, enum dsi_doze_mode_type mod
 }
 #endif
 
-static u32 getInvertNumFromMiddle(float mid,u32 orig_lvl)
-{
-	float diff;
-	u32 res;
-	if(orig_lvl<mid){
-		diff=mid-orig_lvl;
- 		res = (u32)(diff+mid);
-	}	
-	else if(orig_lvl>mid) {
-		diff=orig_lvl-mid;
-		res=(u32)(mid-diff);	
-	} 
-	return res;
-}
-
-static u32 getinvertNumber(u32 orig_lvl, u32 max_lvl)
-{
-//by linAndr
-u32 res;
-float mid;
-if(orig_lvl==0 || orig_lvl==max_lvl) return orig_lvl; 
-/*
-|--------------------|--------------------|   ==> brightness slide
-|<-------side a----->|<-----side b------->|
-frst                mid			  lst	
-
-After view log from dmesg log
-first=9 middle=170 last=1805 , Because slider not balance so diveded 2 part : min to middle (side a) and middle to max (side b) 
-example for invert number with reference from middle :
-side x with member number 3456789 so middle=(3+9)/2 if x=8 then change to x=4, if x=5 then x=7 and so on
-2 process: on every side invert number from side's middle then move left for side b and move right for side a
-*/
-//this is approximation value middle=226 not 170 after calculte it, so this can use number 8 as devider or reverse
-//side b
-if(orig_lvl>226) //226 to max=1805  
-{  
-       //invert from middle
-	mid=1015.5;
-	res=getInvertNumFromMiddle(mid,orig_lvl);
-        //move side b to side a by devided by 8
-	res=res>>3;
-}
-//side a
-else //1 to 226
-{
-	mid=113.5;
-	res=getInvertNumFromMiddle(mid,orig_lvl);
-	//Move side a to side b by multipication by 8
-	res=res<<3;	
-}
-return res;
-}
-
 int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
-	u32 orig_lvl;
 	struct dsi_backlight_config *bl = &panel->bl_config;
 
 	if (panel->host_config.ext_bridge_mode)
 		return 0;
 
-	//invert num
-	orig_lvl=bl_lvl;
-	//if (panel->bl_config.bl_move_high_8b)
- 		//bl_lvl=getinvertNumber(bl_lvl, bl->bl_max_level);
+	DSI_INFO("backlight type:%d bl-lvl:%d\n", bl->type, bl_lvl);
 
-	DSI_INFO("backlight type:%d bl-lvl:%d orig bl_lvl:%d\n", bl->type, bl_lvl,orig_lvl);
 	switch (bl->type) {
 	case DSI_BACKLIGHT_WLED:
 		rc = backlight_device_set_brightness(bl->raw_bd, bl_lvl);
@@ -2330,8 +2278,8 @@ static int dsi_panel_parse_reset_sequence(struct dsi_panel *panel)
 	fts_reset_seq = utils->read_bool(utils->data,
 		"qcom,mdss-dsi-focaltech-reset-sequence");
 	
-	if (fts_ts_varian && !fts_reset_seq) 
-		return 0;
+	//if (fts_ts_varian && !fts_reset_seq) 
+	//	return 0;
 
 	arr = utils->get_property(utils->data,
 			"qcom,mdss-dsi-reset-sequence", &length);
@@ -4945,6 +4893,7 @@ int dsi_panel_unprepare(struct dsi_panel *panel)
 	#ifdef CONFIG_TARGET_PROJECT_C3Q
 		if (get_lct_tp_gesture_status()) 
   			gesture_flag = true;
+		else gesture_flag = false;
 	#endif
 	
 	if (!gesture_flag)
