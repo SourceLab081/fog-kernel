@@ -832,59 +832,6 @@ int dsi_panel_set_doze_mode(struct dsi_panel *panel, enum dsi_doze_mode_type mod
 }
 #endif
 
-static u32 getInvertNumFromMiddle(float mid,u32 orig_lvl)
-{
-	float diff;
-	u32 res;
-	if(orig_lvl<mid){
-		diff=mid-orig_lvl;
- 		res = (u32)(diff+mid);
-	}	
-	else if(orig_lvl>mid) {
-		diff=orig_lvl-mid;
-		res=(u32)(mid-diff);	
-	} 
-	return res;
-}
-
-static u32 getinvertNumber(u32 orig_lvl, u32 max_lvl)
-{
-//by linAndr
-u32 res;
-float mid;
-if(orig_lvl==0 || orig_lvl==max_lvl) return orig_lvl; 
-/*
-|--------------------|--------------------|   ==> brightness slide
-|<-------side a----->|<-----side b------->|
-frst                mid			  lst	
-
-After view log from dmesg log
-first=9 middle=170 last=1805 , Because slider not balance so diveded 2 part : min to middle (side a) and middle to max (side b) 
-example for invert number with reference from middle :
-side x with member number 3456789 so middle=(3+9)/2 if x=8 then change to x=4, if x=5 then x=7 and so on
-2 process: on every side invert number from side's middle then move left for side b and move right for side a
-*/
-//this is approximation value middle=226 not 170 after calculte it, so this can use number 8 as devider or reverse
-//side b
-if(orig_lvl>226) //226 to max=1805  
-{  
-       //invert from middle
-	mid=1015.5;
-	res=getInvertNumFromMiddle(mid,orig_lvl);
-        //move side b to side a by devided by 8
-	res=res>>3;
-}
-//side a
-else //1 to 226
-{
-	mid=113.5;
-	res=getInvertNumFromMiddle(mid,orig_lvl);
-	//Move side a to side b by multipication by 8
-	res=res<<3;	
-}
-return res;
-}
-
 int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
@@ -894,12 +841,7 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 	if (panel->host_config.ext_bridge_mode)
 		return 0;
 
-	//invert num
-	orig_lvl=bl_lvl;
-	//if (panel->bl_config.bl_move_high_8b)
- 		//bl_lvl=getinvertNumber(bl_lvl, bl->bl_max_level);
-
-	DSI_INFO("backlight type:%d bl-lvl:%d orig bl_lvl:%d\n", bl->type, bl_lvl,orig_lvl);
+	DSI_INFO("backlight type:%d bl-lvl:%d\n", bl->type, bl_lvl);
 	switch (bl->type) {
 	case DSI_BACKLIGHT_WLED:
 		rc = backlight_device_set_brightness(bl->raw_bd, bl_lvl);
