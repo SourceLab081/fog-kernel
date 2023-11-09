@@ -206,6 +206,7 @@ struct nvt_ts_data {
 //	struct regulator *pwr_lab; /* VSP +5V */
 //	struct regulator *pwr_ibb; /* VSN -5V */
 #endif
+//struct mutex reg_lock;
 #ifdef CONFIG_MTK_SPI
 	struct mt_chip_conf spi_ctrl;
 #endif
