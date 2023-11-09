@@ -481,12 +481,12 @@ static int dsi_panel_set_pinctrl_state(struct dsi_panel *panel, bool enable)
 }
 
 #ifdef CONFIG_TARGET_PROJECT_C3Q
-static bool fts_ts_varian = false;
-void set_fts_ts_varian(bool en)
+static bool fts_ts_variant = false;
+void set_fts_ts_variant(bool en)
 {
-	fts_ts_varian = en;
+	fts_ts_variant = en;
 }
-EXPORT_SYMBOL(set_fts_ts_varian);
+EXPORT_SYMBOL(set_fts_ts_variant);
 #endif
 
 static int dsi_panel_power_on(struct dsi_panel *panel)
@@ -504,14 +504,12 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		goto exit;
 	}
 
-//for dt2w purpose, coz error for fts variant 
-if (fts_ts_varian) {
+//for dt2w purpose, coz error for fts variant, test change
 	rc = dsi_panel_set_pinctrl_state(panel, true);
 	if (rc) {
 		DSI_ERR("[%s] failed to set pinctrl, rc=%d\n", panel->name, rc);
 		goto error_disable_vregs;
 	}
-}
 
 	rc = dsi_panel_reset(panel);
 #ifdef CONFIG_TARGET_PROJECT_K7T
@@ -543,10 +541,9 @@ error_disable_gpio:
 
 	(void)dsi_panel_set_pinctrl_state(panel, false);
 
-if (fts_ts_varian) {
 error_disable_vregs:
 	(void)dsi_pwr_enable_regulator(&panel->power_info, false);
-}
+
 
 exit:
 	return rc;
@@ -626,17 +623,19 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 			gpio_direction_output(panel->reset_config.lcm_enp_gpio, 0);
 		}
 	}
-
+//for dt2w but not for fts variant
+if(fts_ts_variant){
 	rc = dsi_panel_set_pinctrl_state(panel, false);
 	if (rc) {
 		DSI_ERR("[%s] failed set pinctrl state, rc=%d\n", panel->name,
 		       rc);
 	}
-
+}
 	rc = dsi_pwr_enable_regulator(&panel->power_info, false);
 	if (rc)
 		DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
 				panel->name, rc);
+
 
 	return rc;
 }
@@ -2278,7 +2277,7 @@ static int dsi_panel_parse_reset_sequence(struct dsi_panel *panel)
 	fts_reset_seq = utils->read_bool(utils->data,
 		"qcom,mdss-dsi-focaltech-reset-sequence");
 	
-	//if (fts_ts_varian && !fts_reset_seq) 
+	//if (fts_ts_variant && !fts_reset_seq) 
 	//	return 0;
 
 	arr = utils->get_property(utils->data,
@@ -4896,8 +4895,8 @@ int dsi_panel_unprepare(struct dsi_panel *panel)
 		else gesture_flag = false;
 	#endif
 	
-	if (!gesture_flag)
-	{
+	//if (!gesture_flag)
+	//{
 		mutex_lock(&panel->panel_lock);
 
 		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_POST_OFF);
@@ -4906,7 +4905,7 @@ int dsi_panel_unprepare(struct dsi_panel *panel)
 			       panel->name, rc);
 			goto error;
 		}
-	}
+	//}
 
 error:
 	mutex_unlock(&panel->panel_lock);
