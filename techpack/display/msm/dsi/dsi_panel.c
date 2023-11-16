@@ -551,7 +551,6 @@ exit:
 
 #ifdef CONFIG_TARGET_PROJECT_C3Q
 extern bool get_lct_tp_gesture_status(void);
-extern bool nvt_gesture_flag;
 static bool lcd_reset_keep_high = false;
 void set_lcd_reset_gpio_keep_high(bool en)
 {
@@ -605,7 +604,7 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 				 rc);
 	}
 
-	if(!gesture_flag)
+	if (!gesture_flag) 
 	{
 		msleep(10);
 
@@ -623,6 +622,7 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 			gpio_direction_output(panel->reset_config.lcm_enp_gpio, 0);
 		}
 	}
+
 //for dt2w but not for fts variant
 if(fts_ts_variant){
 	rc = dsi_panel_set_pinctrl_state(panel, false);

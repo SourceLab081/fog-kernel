@@ -84,14 +84,13 @@ int lct_fts_tp_gesture_callback(bool flag)
     }
      //check this funct
     set_lct_tp_gesture_status(flag);
+    set_lcd_reset_gpio_keep_high(flag);
     if (flag) {
         	ts_data->gesture_mode = ENABLE;
-		//check this test
-		//set_lcd_reset_gpio_keep_high(true);	
+			
 	}
     else {
         	ts_data->gesture_mode = DISABLE;
-		//set_lcd_reset_gpio_keep_high(false);
 	 }
     return 0;
 }
@@ -1661,7 +1660,7 @@ static int fts_ts_suspend(struct device *dev)
         fts_gesture_suspend(ts_data);
     } else {
 	//check this
-        fts_irq_disable();
+        //fts_irq_disable();
         FTS_INFO("make TP enter into sleep mode");
         ret = fts_write_reg(FTS_REG_POWER_MODE, FTS_REG_POWER_MODE_SLEEP);
         if (ret < 0)
@@ -1704,8 +1703,8 @@ static int fts_ts_resume(struct device *dev)
 */
 //check this
     /* if gesture_mode enabled, touch reset gpio pull up */
-  //  if (!ts_data->gesture_mode)
-    //    gpio_direction_output(fts_data->pdata->reset_gpio, 1 );
+    if (!ts_data->gesture_mode)
+        gpio_direction_output(fts_data->pdata->reset_gpio, 1 );
 
     fts_release_all_finger();
 
