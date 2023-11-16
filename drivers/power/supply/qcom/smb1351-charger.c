@@ -1058,11 +1058,13 @@ static int smb1351_enable_hvdcp(struct smb1351_charger *chip)
 	//CHARGER_TYPE chg_type = CHARGER_UNKNOWN;
 	int rc = 0;
 
+/* Fix for charging > 10 Watt
 	rc = smb1351_masked_write(chip, HVDCP_BATT_MISSING_CTRL_REG,
 			HVDCP_EN_BIT, HVDCP_EN_BIT);
 	if (rc)
 		pr_err( "SMB1351_LK Couldn't write hvdcp en rc=%d\n", rc);
 
+*/
 	rc = smb1351_masked_write(chip, OTG_MODE_POWER_OPTIONS_REG,
 			MAP_HVDCP_BIT, HVDCP_EN_BIT);
 	if (rc)
@@ -1140,20 +1142,21 @@ static int smb1351_hw_init(struct smb1351_charger *chip)
 		return rc;
 	}
 
+	//Fix for charging > 10 Watt
 	/* setup battery missing source */
-	//reg = BATT_MISSING_THERM_PIN_SOURCE_BIT;
-	//mask = BATT_MISSING_THERM_PIN_SOURCE_BIT;
-	//rc = smb1351_masked_write(chip, HVDCP_BATT_MISSING_CTRL_REG,
-	//						mask,reg);
+	reg = BATT_MISSING_THERM_PIN_SOURCE_BIT;
+	mask = BATT_MISSING_THERM_PIN_SOURCE_BIT;
+	rc = smb1351_masked_write(chip, HVDCP_BATT_MISSING_CTRL_REG,
+							mask,reg);
 /*	reg = BATT_MISSING_THERM_PIN_SOURCE_BIT | HVDCP_EN_BIT;
 	mask = BATT_MISSING_THERM_PIN_SOURCE_BIT | HVDCP_EN_BIT;
 	rc = smb1351_masked_write(chip, HVDCP_BATT_MISSING_CTRL_REG,
 								mask, reg);
-
+*/
 	if (rc) {
 		pr_err("Couldn't set HVDCP_BATT_MISSING_CTRL_REG rc=%d\n", rc);
 		return rc;
-	}*/
+	}
 	smb1351_enable_hvdcp(chip);//11.15
 
 	/* setup defaults for CHG_PIN_EN_CTRL_REG */
