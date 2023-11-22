@@ -84,7 +84,7 @@ int lct_fts_tp_gesture_callback(bool flag)
     }
      //check this funct
     set_lct_tp_gesture_status(flag);
-    set_lcd_reset_gpio_keep_high(flag);
+    //set_lcd_reset_gpio_keep_high(flag);
     if (flag) {
         	ts_data->gesture_mode = ENABLE;
 			
