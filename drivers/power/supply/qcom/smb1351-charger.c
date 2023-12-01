@@ -370,7 +370,7 @@
 #define USB2_MAX_CURRENT_MA			500
 #define USB3_MIN_CURRENT_MA			150
 #define USB3_MAX_CURRENT_MA			900
-#define DCP_MAX_CURRENT_MA			3000
+#define DCP_MAX_CURRENT_MA			3300
 #define SMB1351_IRQ_REG_COUNT			8
 #define SMB1351_CHG_PRE_MIN_MA			100
 #define SMB1351_CHG_FAST_MIN_MA			1000
@@ -1052,19 +1052,33 @@ static int smb_chip_get_version(struct smb1351_charger *chip)
 
 	return rc;
 }
+static int rerun_apsd(struct smb1351_charger *chip)
+{
+	int rc;
+
+	pr_err("Reruning APSD\nDisabling APSD\n");
+
+	rc = smb1351_masked_write(chip, CMD_HVDCP_REG, CMD_APSD_RE_RUN_BIT,
+						CMD_APSD_RE_RUN_BIT);
+	if (rc)
+		pr_err("Couldn't re-run APSD algo\n");
+
+	return 0;
+}
 
 static int smb1351_enable_hvdcp(struct smb1351_charger *chip)
 {
 	//CHARGER_TYPE chg_type = CHARGER_UNKNOWN;
 	int rc = 0;
+	u8 reg = 0;
 
-/* Fix for charging > 10 Watt
+	/* 
 	rc = smb1351_masked_write(chip, HVDCP_BATT_MISSING_CTRL_REG,
 			HVDCP_EN_BIT, HVDCP_EN_BIT);
 	if (rc)
 		pr_err( "SMB1351_LK Couldn't write hvdcp en rc=%d\n", rc);
 
-*/
+	*/
 	rc = smb1351_masked_write(chip, OTG_MODE_POWER_OPTIONS_REG,
 			MAP_HVDCP_BIT, HVDCP_EN_BIT);
 	if (rc)
@@ -1075,6 +1089,25 @@ static int smb1351_enable_hvdcp(struct smb1351_charger *chip)
 		if (rc)
 			pr_err("SMB1351_LK Couldn't write hvdcp input voltage rc=%d\n", rc);
 
+	//add from jasmine sprout
+	rc = smb1351_read_reg(chip, IRQ_G_REG, &reg);
+	if (rc) {
+		pr_err("Couldn't read IRQ_G_REG rc = %d\n", rc);
+		//return rc;
+	}
+
+	/* To detect HVDCP, rerun APSD only if DCP is detected */
+	if (reg & IRQ_SOURCE_DET_BIT) {
+		rc = smb1351_read_reg(chip, STATUS_5_REG, &reg);
+		if (rc) {
+			pr_err("Couldn't read STATUS_5 rc = %d\n", rc);
+			//return rc;
+		}
+
+		if (reg & STATUS_PORT_DCP)
+			rerun_apsd(chip);
+	}
+	//end from js
 	//chg_type = smb1351_get_chr_type();
 	return rc;
 }
@@ -1142,17 +1175,16 @@ static int smb1351_hw_init(struct smb1351_charger *chip)
 		return rc;
 	}
 
-	//Fix for charging > 10 Watt
 	/* setup battery missing source */
-	reg = BATT_MISSING_THERM_PIN_SOURCE_BIT;
+	/*reg = BATT_MISSING_THERM_PIN_SOURCE_BIT;
 	mask = BATT_MISSING_THERM_PIN_SOURCE_BIT;
 	rc = smb1351_masked_write(chip, HVDCP_BATT_MISSING_CTRL_REG,
-							mask,reg);
-/*	reg = BATT_MISSING_THERM_PIN_SOURCE_BIT | HVDCP_EN_BIT;
+							mask,reg);*/
+	reg = BATT_MISSING_THERM_PIN_SOURCE_BIT | HVDCP_EN_BIT;
 	mask = BATT_MISSING_THERM_PIN_SOURCE_BIT | HVDCP_EN_BIT;
 	rc = smb1351_masked_write(chip, HVDCP_BATT_MISSING_CTRL_REG,
 								mask, reg);
-*/
+
 	if (rc) {
 		pr_err("Couldn't set HVDCP_BATT_MISSING_CTRL_REG rc=%d\n", rc);
 		return rc;
@@ -1559,6 +1591,26 @@ static enum power_supply_property smb1351_usb_properties[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 };
 
+//add from veux
+static void smb1351_update_desc_type(struct smb1351_charger *chip)
+{
+	switch (chip->charger_type) {
+	case POWER_SUPPLY_TYPE_USB_CDP:
+	case POWER_SUPPLY_TYPE_USB_DCP:
+	case POWER_SUPPLY_TYPE_USB:
+	case POWER_SUPPLY_TYPE_USB_ACA:
+		chip->usb_psy_d.type = chip->charger_type;
+		break;
+	case POWER_SUPPLY_TYPE_USB_HVDCP:
+		//chip->usb_psy_d.type = POWER_SUPPLY_TYPE_USB_DCP;
+		chip->usb_psy_d.type = POWER_SUPPLY_TYPE_USB_HVDCP;
+		break;
+	default:
+		chip->usb_psy_d.type = POWER_SUPPLY_TYPE_USB;
+		break;
+	}
+}
+
 static int smb1351_usb_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
 				  union power_supply_propval *val)
@@ -1574,12 +1626,12 @@ static int smb1351_usb_get_property(struct power_supply *psy,
 		val->intval = chip->chg_present;
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
-		//val->intval = chip->chg_present && !chip->usb_suspended_status;
-		if (chip->chg_present && (chip->charger_type == POWER_SUPPLY_TYPE_USB
+		val->intval = chip->chg_present && !chip->usb_suspended_status;
+		/*if (chip->chg_present && (chip->charger_type == POWER_SUPPLY_TYPE_USB
 			|| chip->charger_type == POWER_SUPPLY_TYPE_USB_CDP))
 			val->intval = 1;
 		else
-			val->intval = 0;
+			val->intval = 0;*/
 		pr_err("%s:usb_online=%d\n",__func__,val->intval);
 		#if CONFIG_TOUCHSCREEN_COMMON
 			g_touchscreen_usb_pulgin.usb_plugged_in = val->intval;
@@ -1595,7 +1647,8 @@ static int smb1351_usb_get_property(struct power_supply *psy,
 		if (chip->charger_type == POWER_SUPPLY_TYPE_USB_HVDCP)
 			val->intval = POWER_SUPPLY_TYPE_USB_HVDCP;
 		else if (chip->charger_type == POWER_SUPPLY_TYPE_UNKNOWN)
-			val->intval = POWER_SUPPLY_TYPE_UNKNOWN;
+			//val->intval = POWER_SUPPLY_TYPE_UNKNOWN;
+			val->intval = POWER_SUPPLY_TYPE_USB;
 		else
 			val->intval = chip->charger_type;
 		break;
@@ -1673,8 +1726,9 @@ static int smb1351_ac_get_property(struct power_supply *psy,
 		val->intval = chip->chg_present;
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
-		if (chip->chg_present && (chip->charger_type == POWER_SUPPLY_TYPE_USB_DCP
-			|| chip->charger_type == POWER_SUPPLY_TYPE_USB_HVDCP))
+		/*if (chip->chg_present && (chip->charger_type == POWER_SUPPLY_TYPE_USB_DCP
+			|| chip->charger_type == POWER_SUPPLY_TYPE_USB_HVDCP))*/
+		if (chip->chg_present)
 			val->intval = 1;
 		else
 			val->intval = 0;
@@ -2133,20 +2187,6 @@ static int smb1351_parallel_get_property(struct power_supply *psy,
 	return 0;
 }
 
-static int rerun_apsd(struct smb1351_charger *chip)
-{
-	int rc;
-
-	pr_err("Reruning APSD\nDisabling APSD\n");
-
-	rc = smb1351_masked_write(chip, CMD_HVDCP_REG, CMD_APSD_RE_RUN_BIT,
-						CMD_APSD_RE_RUN_BIT);
-	if (rc)
-		pr_err("Couldn't re-run APSD algo\n");
-
-	return 0;
-}
-
 static void smb1351_hvdcp_det_work(struct work_struct *work)
 {
 	int rc;
@@ -2273,7 +2313,7 @@ static int smb1351_apsd_complete_handler(struct smb1351_charger *chip,
 			smb1351_masked_write(chip, CMD_HVDCP_REG,
 						CMD_FORCE_HVDCP_2P0_BIT,
 						CMD_FORCE_HVDCP_2P0_BIT);
-			//type = POWER_SUPPLY_TYPE_USB_HVDCP;
+			type = POWER_SUPPLY_TYPE_USB_HVDCP;
 
 		//} else if (type == POWER_SUPPLY_TYPE_USB_DCP) {
 		} else if (type == POWER_SUPPLY_TYPE_USB_DCP) {
@@ -2317,6 +2357,9 @@ static int smb1351_apsd_complete_handler(struct smb1351_charger *chip,
 		pr_err("extcon notify: EXTCON_USB present = 0\n");
 		smb1351_request_dpdm(chip, false);
 	}
+
+	//add from veux
+	smb1351_update_desc_type(chip);
 
 	return 0;
 }
@@ -2362,8 +2405,9 @@ reschedule:
 }
 
 static int smb1351_usbin_uv_handler(struct smb1351_charger *chip, u8 status)
-{
-	smb1351_request_dpdm(chip, !!status);
+{	
+	//Fix fastcharging
+	smb1351_request_dpdm(chip, !status);
 
 	if (status) {
 		cancel_delayed_work_sync(&chip->hvdcp_det_work);
