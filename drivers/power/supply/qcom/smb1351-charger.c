@@ -375,8 +375,8 @@
 #define SMB1351_CHG_PRE_MIN_MA			100
 #define SMB1351_CHG_FAST_MIN_MA			1000
 #define SMB1351_CHG_FAST_MAX_MA			4500
-#define SMB1351_CHG_PRE_SHIFT			5
-#define SMB1351_CHG_FAST_SHIFT			4
+#define SMB1351_CHG_PRE_SHIFT			5 
+#define SMB1351_CHG_FAST_SHIFT			5 //4
 #define DEFAULT_BATT_CAPACITY			50
 #define DEFAULT_BATT_TEMP			250
 #define SUSPEND_CURRENT_MA			2
@@ -1089,25 +1089,6 @@ static int smb1351_enable_hvdcp(struct smb1351_charger *chip)
 		if (rc)
 			pr_err("SMB1351_LK Couldn't write hvdcp input voltage rc=%d\n", rc);
 
-	//add from jasmine sprout
-	rc = smb1351_read_reg(chip, IRQ_G_REG, &reg);
-	if (rc) {
-		pr_err("Couldn't read IRQ_G_REG rc = %d\n", rc);
-		//return rc;
-	}
-
-	/* To detect HVDCP, rerun APSD only if DCP is detected */
-	if (reg & IRQ_SOURCE_DET_BIT) {
-		rc = smb1351_read_reg(chip, STATUS_5_REG, &reg);
-		if (rc) {
-			pr_err("Couldn't read STATUS_5 rc = %d\n", rc);
-			//return rc;
-		}
-
-		if (reg & STATUS_PORT_DCP)
-			rerun_apsd(chip);
-	}
-	//end from js
 	//chg_type = smb1351_get_chr_type();
 	return rc;
 }
@@ -1590,26 +1571,6 @@ static enum power_supply_property smb1351_usb_properties[] = {
 	POWER_SUPPLY_PROP_QUICK_CHARGE_TYPE,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 };
-
-//add from veux
-static void smb1351_update_desc_type(struct smb1351_charger *chip)
-{
-	switch (chip->charger_type) {
-	case POWER_SUPPLY_TYPE_USB_CDP:
-	case POWER_SUPPLY_TYPE_USB_DCP:
-	case POWER_SUPPLY_TYPE_USB:
-	case POWER_SUPPLY_TYPE_USB_ACA:
-		chip->usb_psy_d.type = chip->charger_type;
-		break;
-	case POWER_SUPPLY_TYPE_USB_HVDCP:
-		//chip->usb_psy_d.type = POWER_SUPPLY_TYPE_USB_DCP;
-		chip->usb_psy_d.type = POWER_SUPPLY_TYPE_USB_HVDCP;
-		break;
-	default:
-		chip->usb_psy_d.type = POWER_SUPPLY_TYPE_USB;
-		break;
-	}
-}
 
 static int smb1351_usb_get_property(struct power_supply *psy,
 		enum power_supply_property psp,
@@ -2358,9 +2319,6 @@ static int smb1351_apsd_complete_handler(struct smb1351_charger *chip,
 		smb1351_request_dpdm(chip, false);
 	}
 
-	//add from veux
-	smb1351_update_desc_type(chip);
-
 	return 0;
 }
 
@@ -2406,7 +2364,7 @@ reschedule:
 
 static int smb1351_usbin_uv_handler(struct smb1351_charger *chip, u8 status)
 {	
-	//Fix fastcharging
+	//Fix fastcharging from jasmine sprout and also veux
 	smb1351_request_dpdm(chip, !status);
 
 	if (status) {
