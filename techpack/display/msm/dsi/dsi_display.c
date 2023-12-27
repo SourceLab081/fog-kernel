@@ -5520,12 +5520,14 @@ static int dsi_display_bind(struct device *dev,
 		goto error;
 	}
 
+#ifdef CONFIG_TARGET_PROJECT_K7T
 	rc = dsi_display_sysfs_init(display);
 	if (rc) {
 		DSI_ERR("[%s] sysfs init failed, rc=%d\n", display->name, rc);
 		goto error;
 	}
 
+#endif
 	atomic_set(&display->clkrate_change_pending, 0);
 	display->cached_clk_rate = 0;
 

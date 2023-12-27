@@ -504,7 +504,6 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		goto exit;
 	}
 
-//for dt2w purpose, coz error for fts variant, test change
 	rc = dsi_panel_set_pinctrl_state(panel, true);
 	if (rc) {
 		DSI_ERR("[%s] failed to set pinctrl, rc=%d\n", panel->name, rc);
@@ -623,7 +622,7 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 		}
 	}
 
-//for dt2w but not for fts variant
+//for dt2w nvt but not for fts variant
 if(fts_ts_variant){
 	rc = dsi_panel_set_pinctrl_state(panel, false);
 	if (rc) {
@@ -785,6 +784,7 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	dsi = &panel->mipi_device;
 	bl = &panel->bl_config;
 
+	// from https://github.com/MiCode/vendor_opensource_display-drivers/blob/xun-t-oss/msm/dsi/dsi_panel.c
 	//bl_lvl = bl_lvl * 9 / 10;
 	if (panel->bl_config.bl_move_high_8b) {
         	bl_lvl = bl_lvl << 5;
@@ -2277,8 +2277,8 @@ static int dsi_panel_parse_reset_sequence(struct dsi_panel *panel)
 	fts_reset_seq = utils->read_bool(utils->data,
 		"qcom,mdss-dsi-focaltech-reset-sequence");
 	
-	//if (fts_ts_variant && !fts_reset_seq) 
-	//	return 0;
+	if (fts_ts_variant && !fts_reset_seq) 
+		return 0;
 
 	arr = utils->get_property(utils->data,
 			"qcom,mdss-dsi-reset-sequence", &length);
@@ -4895,8 +4895,6 @@ int dsi_panel_unprepare(struct dsi_panel *panel)
 		else gesture_flag = false;
 	#endif
 	
-	//if (!gesture_flag)
-	//{
 		mutex_lock(&panel->panel_lock);
 
 		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_POST_OFF);
@@ -4905,7 +4903,6 @@ int dsi_panel_unprepare(struct dsi_panel *panel)
 			       panel->name, rc);
 			goto error;
 		}
-	//}
 
 error:
 	mutex_unlock(&panel->panel_lock);
