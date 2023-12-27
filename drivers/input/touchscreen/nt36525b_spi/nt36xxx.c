@@ -1803,7 +1803,7 @@ return:
 /*
 static int32_t nvt_ts_enable_regulator(bool en)
 {
-	static bool status;
+	static bool status = false;
 	int32_t ret = 0;
 
 	if (status == en) {
@@ -2140,7 +2140,7 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		goto err_get_regulator;
 	}
 
-	ret = nvt_ts_enable_regulator(true);
+	ret = nvt_ts_enable_regulator(false);//default disable regulator
 	if (ret < 0) {
 		NVT_ERR("Failed to enable regulator\n");
 		goto err_enable_regulator;
@@ -2566,20 +2566,20 @@ err_ckeck_full_duplex:
 #ifdef CHECK_TOUCH_VENDOR
 err_vendor_check:
 #endif
-	//if (ts->rbuf) {
+	if (ts->rbuf) {
 		kfree(ts->rbuf);
 		ts->rbuf = NULL;
-	//}
+	}
 err_malloc_rbuf:
-	//if (ts->xbuf) {
+	if (ts->xbuf) {
 		kfree(ts->xbuf);
 		ts->xbuf = NULL;
-	//}
+	}
 err_malloc_xbuf:
-	//if (ts) {
+	if (ts) {
 		kfree(ts);
 		ts = NULL;
-	//}
+	}
 	return ret;
 }
 
@@ -2683,15 +2683,15 @@ uninit_lct_tp_info();
 
 	spi_set_drvdata(client, NULL);
 
-	//if (ts->xbuf) {
+	if (ts->xbuf) {
 		kfree(ts->xbuf);
 		ts->xbuf = NULL;
-	//}
+	}
 
-	//if (ts) {
+	if (ts) {
 		kfree(ts);
 		ts = NULL;
-	//}
+	}
 
 	return 0;
 }
@@ -2816,9 +2816,9 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	NVT_LOG("Enabled touch wakeup gesture\n");
 	} else {
 		//---write command to enter "deep sleep mode"---
-		//buf[0] = EVENT_MAP_HOST_CMD;
-		//buf[1] = 0x11;
-		//CTP_SPI_WRITE(ts->client, buf, 2);
+		buf[0] = EVENT_MAP_HOST_CMD;
+		buf[1] = 0x11;
+		CTP_SPI_WRITE(ts->client, buf, 2);
 		NVT_LOG("power off, enter sleep mode\n");
 	}
 
@@ -2879,11 +2879,6 @@ static int32_t nvt_ts_resume(struct device *dev)
 {
 	if (bTouchIsAwake) {
 		NVT_LOG("Touch is already resume\n");
-#if NVT_TOUCH_WDT_RECOVERY
-		mutex_lock(&ts->lock);
-		nvt_update_firmware(BOOT_UPDATE_FIRMWARE_NAME);
-		mutex_unlock(&ts->lock);
-#endif /* #if NVT_TOUCH_WDT_RECOVERY */
 		return 0;
 	}
 
