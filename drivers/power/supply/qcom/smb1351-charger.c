@@ -1052,25 +1052,11 @@ static int smb_chip_get_version(struct smb1351_charger *chip)
 
 	return rc;
 }
-static int rerun_apsd(struct smb1351_charger *chip)
-{
-	int rc;
-
-	pr_err("Reruning APSD\nDisabling APSD\n");
-
-	rc = smb1351_masked_write(chip, CMD_HVDCP_REG, CMD_APSD_RE_RUN_BIT,
-						CMD_APSD_RE_RUN_BIT);
-	if (rc)
-		pr_err("Couldn't re-run APSD algo\n");
-
-	return 0;
-}
 
 static int smb1351_enable_hvdcp(struct smb1351_charger *chip)
 {
 	//CHARGER_TYPE chg_type = CHARGER_UNKNOWN;
 	int rc = 0;
-	u8 reg = 0;
 
 	/* 
 	rc = smb1351_masked_write(chip, HVDCP_BATT_MISSING_CTRL_REG,
@@ -1587,12 +1573,12 @@ static int smb1351_usb_get_property(struct power_supply *psy,
 		val->intval = chip->chg_present;
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
-		val->intval = chip->chg_present && !chip->usb_suspended_status;
-		/*if (chip->chg_present && (chip->charger_type == POWER_SUPPLY_TYPE_USB
+		//val->intval = chip->chg_present && !chip->usb_suspended_status;
+		if (chip->chg_present && (chip->charger_type == POWER_SUPPLY_TYPE_USB
 			|| chip->charger_type == POWER_SUPPLY_TYPE_USB_CDP))
 			val->intval = 1;
 		else
-			val->intval = 0;*/
+			val->intval = 0;
 		pr_err("%s:usb_online=%d\n",__func__,val->intval);
 		#if CONFIG_TOUCHSCREEN_COMMON
 			g_touchscreen_usb_pulgin.usb_plugged_in = val->intval;
@@ -1608,8 +1594,8 @@ static int smb1351_usb_get_property(struct power_supply *psy,
 		if (chip->charger_type == POWER_SUPPLY_TYPE_USB_HVDCP)
 			val->intval = POWER_SUPPLY_TYPE_USB_HVDCP;
 		else if (chip->charger_type == POWER_SUPPLY_TYPE_UNKNOWN)
-			//val->intval = POWER_SUPPLY_TYPE_UNKNOWN;
-			val->intval = POWER_SUPPLY_TYPE_USB;
+			val->intval = POWER_SUPPLY_TYPE_UNKNOWN;
+			//val->intval = POWER_SUPPLY_TYPE_USB;
 		else
 			val->intval = chip->charger_type;
 		break;
@@ -1687,9 +1673,8 @@ static int smb1351_ac_get_property(struct power_supply *psy,
 		val->intval = chip->chg_present;
 		break;
 	case POWER_SUPPLY_PROP_ONLINE:
-		/*if (chip->chg_present && (chip->charger_type == POWER_SUPPLY_TYPE_USB_DCP
-			|| chip->charger_type == POWER_SUPPLY_TYPE_USB_HVDCP))*/
-		if (chip->chg_present)
+		if (chip->chg_present && (chip->charger_type == POWER_SUPPLY_TYPE_USB_DCP
+			|| chip->charger_type == POWER_SUPPLY_TYPE_USB_HVDCP || chip->charger_type == POWER_SUPPLY_TYPE_USB_HVDCP_3)) 
 			val->intval = 1;
 		else
 			val->intval = 0;
@@ -2145,6 +2130,20 @@ static int smb1351_parallel_get_property(struct power_supply *psy,
 	default:
 		return -EINVAL;
 	}
+	return 0;
+}
+
+static int rerun_apsd(struct smb1351_charger *chip)
+{
+	int rc;
+
+	pr_err("Reruning APSD\nDisabling APSD\n");
+
+	rc = smb1351_masked_write(chip, CMD_HVDCP_REG, CMD_APSD_RE_RUN_BIT,
+						CMD_APSD_RE_RUN_BIT);
+	if (rc)
+		pr_err("Couldn't re-run APSD algo\n");
+
 	return 0;
 }
 
